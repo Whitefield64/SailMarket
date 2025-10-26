@@ -1,12 +1,13 @@
 'use client';
 
-import { FileText, Home, Settings } from 'lucide-react';
+import { FileText, Home, Settings, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
+  { name: 'Generate Content', href: '/generate', icon: Sparkles },
   { name: 'Reports', href: '/reports', icon: FileText },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
