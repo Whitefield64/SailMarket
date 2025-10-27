@@ -231,7 +231,7 @@ async def _call_openai(
 
     Args:
         prompt: The user prompt
-        model: Model name (defaults to gpt-4-turbo-preview)
+        model: Model name (defaults to gpt-4o-mini)
         max_tokens: Maximum tokens to generate
         temperature: Sampling temperature
         system_prompt: System prompt for context
@@ -244,7 +244,7 @@ async def _call_openai(
         raise LLMAPIError("OPENAI_API_KEY not configured")
 
     client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    model = model or "gpt-4-turbo-preview"
+    model = model or "gpt-4o-mini" #edjon perchè gpt-5-nano ha parametri diversi?
 
     messages = []
     if system_prompt:
@@ -307,7 +307,7 @@ async def _stream_openai(
         raise LLMAPIError("OPENAI_API_KEY not configured")
 
     client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
-    model = model or "gpt-4-turbo-preview"
+    model = model or "gpt-4o-mini"
 
     messages = []
     if system_prompt:
