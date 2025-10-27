@@ -28,6 +28,7 @@ export interface ContentGenerationRequest {
   tone: ContentTone;
   length: number;
   additional_context?: string;
+  user_id?: number;
 }
 
 export interface ContentGenerationResponse {
@@ -47,6 +48,30 @@ export interface ContentGenerationResponse {
 export interface GeneratedContentList {
   items: ContentGenerationResponse[];
   total: number;
+}
+
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Report {
+  id: number;
+  user_id: number;
+  title: string;
+  config: any;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportCreate {
+  user_id: number;
+  title: string;
+  config: any;
 }
 
 export const api = {
@@ -74,6 +99,52 @@ export const api = {
 
   getGeneratedContent: async (id: number): Promise<ContentGenerationResponse> => {
     const response = await apiClient.get<ContentGenerationResponse>(`/api/generated-content/${id}`);
+    return response.data;
+  },
+
+  // User authentication endpoints
+  register: async (username: string, email: string): Promise<User> => {
+    const response = await apiClient.post<User>('/api/users/register', { username, email });
+    return response.data;
+  },
+
+  login: async (username: string): Promise<User> => {
+    const response = await apiClient.post<User>('/api/users/login', { username });
+    return response.data;
+  },
+
+  getCurrentUser: async (userId: number): Promise<User> => {
+    const response = await apiClient.get<User>(`/api/users/me/${userId}`);
+    return response.data;
+  },
+
+  getUserStats: async (userId: number): Promise<{ total_reports: number; active_reports: number; completed_reports: number }> => {
+    const response = await apiClient.get(`/api/users/${userId}/stats`);
+    return response.data;
+  },
+
+  // Report management endpoints
+  createReport: async (reportData: ReportCreate): Promise<Report> => {
+    const response = await apiClient.post<Report>('/api/reports', reportData);
+    return response.data;
+  },
+
+  getUserReports: async (userId: number, skip: number = 0, limit: number = 50): Promise<Report[]> => {
+    const response = await apiClient.get<Report[]>(`/api/reports/user/${userId}`, {
+      params: { skip, limit }
+    });
+    return response.data;
+  },
+
+  getReport: async (reportId: number): Promise<Report> => {
+    const response = await apiClient.get<Report>(`/api/reports/${reportId}`);
+    return response.data;
+  },
+
+  deleteReport: async (reportId: number, userId: number): Promise<{ message: string }> => {
+    const response = await apiClient.delete(`/api/reports/${reportId}`, {
+      params: { user_id: userId }
+    });
     return response.data;
   },
 };

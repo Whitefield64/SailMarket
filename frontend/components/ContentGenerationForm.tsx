@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api, ContentType, ContentTone, type ContentGenerationRequest, type ContentGenerationResponse } from '@/lib/api';
 import { Loader2, Copy, Check } from 'lucide-react';
+import { useUser } from '@/contexts/UserContext';
 
 const CONTENT_TYPES: { value: ContentType; label: string }[] = [
   { value: 'blog', label: 'Blog Post' },
@@ -24,6 +25,8 @@ const CONTENT_TONES: { value: ContentTone; label: string }[] = [
 ];
 
 export function ContentGenerationForm() {
+  const { user } = useUser();
+
   const [formData, setFormData] = useState<ContentGenerationRequest>({
     content_type: 'blog',
     topic: '',
@@ -44,7 +47,12 @@ export function ContentGenerationForm() {
     setResult(null);
 
     try {
-      const response = await api.generateContent(formData);
+      // Include user_id if user is logged in
+      const requestData = {
+        ...formData,
+        user_id: user?.id
+      };
+      const response = await api.generateContent(requestData);
       setResult(response);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to generate content. Please try again.');

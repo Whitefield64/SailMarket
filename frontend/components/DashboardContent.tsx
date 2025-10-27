@@ -1,13 +1,24 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { api, type HealthResponse } from '@/lib/api';
 import { Plus } from 'lucide-react';
+import { useUser } from '@/contexts/UserContext';
+
+interface UserStats {
+  total_reports: number;
+  active_reports: number;
+  completed_reports: number;
+}
 
 export function DashboardContent() {
+  const { user } = useUser();
+  const router = useRouter();
   const [healthStatus, setHealthStatus] = useState<HealthResponse | null>(null);
+  const [stats, setStats] = useState<UserStats>({ total_reports: 0, active_reports: 0, completed_reports: 0 });
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -22,6 +33,21 @@ export function DashboardContent() {
 
     checkHealth();
   }, []);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!user) return;
+
+      try {
+        const userStats = await api.getUserStats(user.id);
+        setStats(userStats);
+      } catch (error) {
+        console.error('Failed to fetch stats:', error);
+      }
+    };
+
+    fetchStats();
+  }, [user]);
 
   return (
     <div className="space-y-6">
@@ -45,7 +71,7 @@ export function DashboardContent() {
             <CardDescription>All time</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.total_reports}</div>
           </CardContent>
         </Card>
 
@@ -55,7 +81,7 @@ export function DashboardContent() {
             <CardDescription>Currently processing</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.active_reports}</div>
           </CardContent>
         </Card>
 

@@ -13,18 +13,24 @@ class DebugConfigResponse(BaseModel):
 
 class UserBase(BaseModel):
     email: str
+    username: str
 
 class UserCreate(UserBase):
     pass
 
+class UserLogin(BaseModel):
+    username: str
+
 class User(UserBase):
     id: int
     created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True
 
 class ReportBase(BaseModel):
+    title: str
     config: Dict[str, Any]
 
 class ReportCreate(ReportBase):
@@ -39,6 +45,9 @@ class Report(ReportBase):
 
     class Config:
         from_attributes = True
+
+class ReportWithContent(Report):
+    generated_content: Optional[list] = []
 
 class ContentTypeEnum(str, Enum):
     BLOG = "blog"
@@ -61,6 +70,7 @@ class ContentGenerationRequest(BaseModel):
     tone: ContentToneEnum = Field(..., description="Tone of the content")
     length: int = Field(..., ge=50, le=5000, description="Desired length in words")
     additional_context: Optional[str] = Field(None, max_length=2000, description="Additional context or requirements")
+    user_id: Optional[int] = Field(None, description="User ID for associating content with user")
 
 class ContentGenerationResponse(BaseModel):
     id: int
