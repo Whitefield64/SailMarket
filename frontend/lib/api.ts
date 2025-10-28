@@ -147,6 +147,20 @@ export const api = {
     });
     return response.data;
   },
+
+  // Blueprint Generation
+  generateBlueprint: async (request: {
+    reportType: string;
+    selectedDataPoints: string[];
+    additionalNotes?: string;
+  }): Promise<{
+    blueprint: any;
+    success: boolean;
+    error?: string;
+  }> => {
+    const response = await apiClient.post('/api/blueprint/generate', request);
+    return response.data;
+  },
 };
 
-export default apiClient;
+export default api;

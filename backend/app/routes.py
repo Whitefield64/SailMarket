@@ -14,7 +14,12 @@ from app.schemas import (
     UserLogin,
     Report as ReportSchema,
     ReportCreate,
-    ReportWithContent
+    ReportWithContent,
+    BlueprintGenerationRequest,
+    BlueprintGenerationResponse,
+    Blueprint,
+    BlueprintSection,
+    SectionMetadata
 )
 from app.config import settings
 from app.database import get_db
@@ -562,3 +567,151 @@ async def delete_report(
         logger.error(f"Report deletion failed: {str(e)}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Report deletion failed: {str(e)}")
+
+
+# Blueprint Generation Endpoint
+@router.post("/blueprint/generate", response_model=BlueprintGenerationResponse)
+async def generate_blueprint(
+    request: BlueprintGenerationRequest,
+    db: Session = Depends(get_db)
+) -> BlueprintGenerationResponse:
+    """
+    Generate a report blueprint structure using LLM based on user selections.
+    """
+    try:
+        logger.info(f"Generating blueprint for report type: {request.reportType}")
+
+        # Build the prompt for LLM
+        prompt = _build_blueprint_prompt(request)
+        system_prompt = _build_blueprint_system_prompt()
+
+        # Call LLM to generate blueprint
+        start_time = time.time()
+        result = await call_llm(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            max_tokens=4000,
+            temperature=0.7
+        )
+        generation_time = time.time() - start_time
+
+        logger.info(f"Blueprint generated in {generation_time:.2f}s using {result.get('provider')}")
+
+        # Parse the LLM response (expecting JSON)
+        import json
+        try:
+            blueprint_data = json.loads(result['content'])
+        except json.JSONDecodeError:
+            # If not valid JSON, try to extract JSON from markdown code blocks
+            content = result['content']
+            if '```json' in content:
+                content = content.split('```json')[1].split('```')[0].strip()
+            elif '```' in content:
+                content = content.split('```')[1].split('```')[0].strip()
+            blueprint_data = json.loads(content)
+
+        # Validate and create Blueprint object
+        blueprint = Blueprint(
+            reportTitle=blueprint_data.get('reportTitle', f"{request.reportType.value.replace('_', ' ').title()} Report"),
+            sections=[
+                BlueprintSection(
+                    id=section.get('id', f"section_{i}"),
+                    type=section.get('type', 'paragraph'),
+                    content=section.get('content', ''),
+                    order=section.get('order', i),
+                    parentId=section.get('parentId'),
+                    metadata=SectionMetadata(**section.get('metadata', {}))
+                )
+                for i, section in enumerate(blueprint_data.get('sections', []))
+            ],
+            generatedAt=datetime.now().isoformat(),
+            reportType=request.reportType
+        )
+
+        return BlueprintGenerationResponse(
+            blueprint=blueprint,
+            success=True
+        )
+
+    except LLMRateLimitError as e:
+        logger.error(f"Rate limit error: {str(e)}")
+        raise HTTPException(status_code=429, detail=str(e))
+    except LLMAPIError as e:
+        logger.error(f"LLM API error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"LLM API error: {str(e)}")
+    except Exception as e:
+        logger.error(f"Blueprint generation error: {str(e)}")
+        return BlueprintGenerationResponse(
+            blueprint=None,
+            success=False,
+            error=str(e)
+        )
+
+
+def _build_blueprint_prompt(request: BlueprintGenerationRequest) -> str:
+    """Build the prompt for blueprint generation."""
+    data_points_str = "\n".join(f"- {dp}" for dp in request.selectedDataPoints)
+
+    report_type_label = request.reportType.value.replace('_', ' ').title()
+
+    prompt = f"""You are a professional report structure architect. Based on the user's selections, create a detailed report blueprint.
+
+USER SELECTIONS:
+- Report Type: {report_type_label}
+- Selected Data Points:
+{data_points_str}
+- Additional Notes: {request.additionalNotes if request.additionalNotes else 'None'}
+
+TASK: Generate a comprehensive report structure in JSON format with the following schema:
+
+{{
+  "reportTitle": "string - compelling title for the report",
+  "sections": [
+    {{
+      "id": "unique-id-string",
+      "type": "title|subtitle|section|paragraph|image_placeholder|table_placeholder",
+      "content": "string - brief description of what goes here",
+      "order": number,
+      "parentId": "string|null - for hierarchical structure",
+      "metadata": {{
+        "dataSource": "string - where to get this data",
+        "analysisType": "string - what kind of analysis",
+        "visualizationType": "string - for images/charts",
+        "estimatedLength": "string - estimated word count or size"
+      }}
+    }}
+  ]
+}}
+
+RULES:
+1. Start with a main title (type: "title")
+2. Include an executive summary section (type: "section" with child paragraphs)
+3. Organize data points into logical sections and subsections
+4. For each data point selected, create appropriate paragraphs AND suggest relevant visualizations (images/charts)
+5. Use descriptive content that guides the LLM on what to write
+6. Maintain logical flow and hierarchy using parentId
+7. End with conclusions/recommendations section
+8. Include at least 3-5 image_placeholder or table_placeholder sections for data visualization
+9. Ensure order numbers are sequential and logical
+
+Generate a professional, comprehensive structure that would result in a thorough {report_type_label} report.
+
+Return ONLY valid JSON, no markdown formatting or additional text."""
+
+    return prompt
+
+
+def _build_blueprint_system_prompt() -> str:
+    """Build the system prompt for blueprint generation."""
+    return """You are an expert business analyst and report architect. Your role is to create well-structured,
+comprehensive report blueprints that organize information logically and include appropriate data visualizations.
+You have deep expertise in market research, competitive analysis, business performance metrics, and strategic planning.
+
+When creating report structures:
+- Think hierarchically and organize information from high-level summaries to detailed analysis
+- Balance text content with visual elements (charts, tables, diagrams)
+- Include actionable insights and recommendations
+- Consider the target audience and their needs
+- Ensure the structure flows logically from problem/context to analysis to conclusions
+
+Always return valid JSON that matches the requested schema exactly."""

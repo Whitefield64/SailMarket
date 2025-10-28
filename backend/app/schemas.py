@@ -91,3 +91,49 @@ class ContentGenerationResponse(BaseModel):
 class GeneratedContentList(BaseModel):
     items: list[ContentGenerationResponse]
     total: int
+
+# Blueprint Schemas
+class ReportTypeEnum(str, Enum):
+    COMPETITOR_ANALYSIS = "competitor_analysis"
+    BUSINESS_PERFORMANCE = "business_performance"
+    NEW_PARTNERS = "new_partners"
+    MARKET_TRENDS = "market_trends"
+    PRODUCT_LAUNCH = "product_launch"
+
+class SectionTypeEnum(str, Enum):
+    TITLE = "title"
+    SUBTITLE = "subtitle"
+    SECTION = "section"
+    PARAGRAPH = "paragraph"
+    IMAGE_PLACEHOLDER = "image_placeholder"
+    TABLE_PLACEHOLDER = "table_placeholder"
+
+class SectionMetadata(BaseModel):
+    dataSource: Optional[str] = None
+    analysisType: Optional[str] = None
+    visualizationType: Optional[str] = None
+    estimatedLength: Optional[str] = None
+
+class BlueprintSection(BaseModel):
+    id: str
+    type: SectionTypeEnum
+    content: str
+    order: int
+    parentId: Optional[str] = None
+    metadata: SectionMetadata
+
+class Blueprint(BaseModel):
+    reportTitle: str
+    sections: list[BlueprintSection]
+    generatedAt: str
+    reportType: ReportTypeEnum
+
+class BlueprintGenerationRequest(BaseModel):
+    reportType: ReportTypeEnum
+    selectedDataPoints: list[str]
+    additionalNotes: Optional[str] = ""
+
+class BlueprintGenerationResponse(BaseModel):
+    blueprint: Blueprint
+    success: bool
+    error: Optional[str] = None
