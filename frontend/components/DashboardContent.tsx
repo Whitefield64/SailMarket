@@ -58,7 +58,7 @@ export function DashboardContent() {
             Create and manage your marketing reports
           </p>
         </div>
-        <Button>
+        <Button onClick={() => router.push('/report-builder')}>
           <Plus className="mr-2 h-4 w-4" />
           Create Report
         </Button>

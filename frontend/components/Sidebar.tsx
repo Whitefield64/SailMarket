@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, Home, Settings, Sparkles, User, LogOut, Layout } from 'lucide-react';
+import { FileText, Home, Settings, User, LogOut, Layout } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -8,7 +8,6 @@ import { useUser } from '@/contexts/UserContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: Home },
-  { name: 'Generate Content', href: '/generate', icon: Sparkles },
   { name: 'Report Builder', href: '/report-builder', icon: Layout },
   { name: 'My Reports', href: '/reports', icon: FileText },
   { name: 'Settings', href: '/settings', icon: Settings },

@@ -31,66 +31,40 @@ class User(UserBase):
 
 class ReportBase(BaseModel):
     title: str
-    config: Dict[str, Any]
 
 class ReportCreate(ReportBase):
     user_id: int
 
 class Report(ReportBase):
+    # Core identification
     id: int
     user_id: int
+
+    # Report metadata
+    report_type: Optional[str] = None
     status: str
+
+    # Generation metadata
+    llm_provider: Optional[str] = None
+    model_used: Optional[str] = None
+    tokens_used: Optional[int] = None
+    generation_time: Optional[float] = None
+
+    # Report content and structure
+    form_selections: Optional[Dict[str, Any]] = None
+    blueprint: Optional[Dict[str, Any]] = None
+    prompt_used: Optional[str] = None
+    generated_content: Optional[str] = None
+
+    # Timestamps
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
-class ReportWithContent(Report):
-    generated_content: Optional[list] = []
-
-class ContentTypeEnum(str, Enum):
-    BLOG = "blog"
-    SOCIAL = "social"
-    EMAIL = "email"
-    AD_COPY = "ad_copy"
-    LANDING_PAGE = "landing_page"
-
-class ContentToneEnum(str, Enum):
-    PROFESSIONAL = "professional"
-    CASUAL = "casual"
-    FRIENDLY = "friendly"
-    FORMAL = "formal"
-    HUMOROUS = "humorous"
-    URGENT = "urgent"
-
-class ContentGenerationRequest(BaseModel):
-    content_type: ContentTypeEnum = Field(..., description="Type of content to generate")
-    topic: str = Field(..., min_length=1, max_length=500, description="Topic or subject of the content")
-    tone: ContentToneEnum = Field(..., description="Tone of the content")
-    length: int = Field(..., ge=50, le=5000, description="Desired length in words")
-    additional_context: Optional[str] = Field(None, max_length=2000, description="Additional context or requirements")
-    user_id: Optional[int] = Field(None, description="User ID for associating content with user")
-
-class ContentGenerationResponse(BaseModel):
-    id: int
-    content_type: str
-    topic: str
-    tone: str
-    length: int
-    generated_text: str
-    llm_provider: str
-    model_used: str
-    tokens_used: Optional[int]
-    generation_time: Optional[float]
-    created_at: datetime
+    # Error handling
+    error_message: Optional[str] = None
 
     class Config:
         from_attributes = True
-
-class GeneratedContentList(BaseModel):
-    items: list[ContentGenerationResponse]
-    total: int
 
 # Blueprint Schemas
 class ReportTypeEnum(str, Enum):
@@ -137,3 +111,13 @@ class BlueprintGenerationResponse(BaseModel):
     blueprint: Blueprint
     success: bool
     error: Optional[str] = None
+
+class ReportGenerationRequest(BaseModel):
+    user_id: int
+    blueprint: Blueprint
+    form_selections: Dict[str, Any]  # Contains selectedDataPoints, additionalNotes, etc.
+
+class ReportGenerationResponse(BaseModel):
+    report_id: int
+    status: str
+    message: str

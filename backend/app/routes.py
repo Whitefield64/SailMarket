@@ -6,24 +6,22 @@ from sqlalchemy.orm import Session
 from app.schemas import (
     HealthResponse,
     DebugConfigResponse,
-    ContentGenerationRequest,
-    ContentGenerationResponse,
-    GeneratedContentList,
     User as UserSchema,
     UserCreate,
     UserLogin,
     Report as ReportSchema,
     ReportCreate,
-    ReportWithContent,
     BlueprintGenerationRequest,
     BlueprintGenerationResponse,
     Blueprint,
     BlueprintSection,
-    SectionMetadata
+    SectionMetadata,
+    ReportGenerationRequest,
+    ReportGenerationResponse
 )
 from app.config import settings
 from app.database import get_db
-from app.models import GeneratedContent, ContentType, ContentTone, User, Report
+from app.models import User, Report
 from app.llm import call_llm, LLMError, LLMRateLimitError, LLMAPIError
 import logging
 
@@ -44,240 +42,6 @@ async def debug_config() -> DebugConfigResponse:
         llm_provider=settings.LLM_PROVIDER,
         mcp_transport=settings.MCP_TRANSPORT
     )
-
-@router.post("/generate-content", response_model=ContentGenerationResponse)
-async def generate_content(
-    request: ContentGenerationRequest,
-    db: Session = Depends(get_db)
-) -> ContentGenerationResponse:
-    """
-    Generate marketing content using the configured LLM provider.
-
-    Args:
-        request: Content generation parameters
-        db: Database session
-
-    Returns:
-        Generated content with metadata
-
-    Raises:
-        HTTPException: If generation fails
-    """
-    logger.info(f"Generating {request.content_type} content for topic: {request.topic}")
-
-    prompt = _build_prompt(request)
-    system_prompt = _build_system_prompt(request.content_type, request.tone)
-
-    start_time = time.time()
-
-    try:
-        llm_response = await call_llm(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            max_tokens=min(request.length * 2, 4096),
-            temperature=0.7
-        )
-
-        generation_time = time.time() - start_time
-
-        # Create content record with user_id if provided
-        content_record = GeneratedContent(
-            user_id=request.user_id,  # Now includes user_id
-            content_type=ContentType[request.content_type.upper()],
-            topic=request.topic,
-            tone=ContentTone[request.tone.upper()],
-            length=request.length,
-            prompt=prompt,
-            generated_text=llm_response["content"],
-            llm_provider=llm_response["provider"],
-            model_used=llm_response["model"],
-            tokens_used=llm_response.get("tokens_used"),
-            generation_time=generation_time
-        )
-
-        db.add(content_record)
-        db.commit()
-        db.refresh(content_record)
-
-        logger.info(f"Content generated successfully. ID: {content_record.id}, User ID: {request.user_id}, Provider: {llm_response['provider']}")
-
-        # Create a Report entry if user_id is provided
-        if request.user_id:
-            report = Report(
-                user_id=request.user_id,
-                title=f"{request.content_type.value.replace('_', ' ').title()} - {request.topic}",
-                config={
-                    "content_type": request.content_type.value,
-                    "tone": request.tone.value,
-                    "length": request.length,
-                    "content_id": content_record.id,
-                    "llm_provider": llm_response["provider"],
-                    "model_used": llm_response["model"]
-                },
-                status="completed"
-            )
-            db.add(report)
-            db.commit()
-            db.refresh(report)
-            logger.info(f"Report created successfully. Report ID: {report.id}, Content ID: {content_record.id}")
-
-        return ContentGenerationResponse(
-            id=content_record.id,
-            content_type=request.content_type.value,
-            topic=content_record.topic,
-            tone=request.tone.value,
-            length=content_record.length,
-            generated_text=content_record.generated_text,
-            llm_provider=content_record.llm_provider,
-            model_used=content_record.model_used,
-            tokens_used=content_record.tokens_used,
-            generation_time=content_record.generation_time,
-            created_at=content_record.created_at
-        )
-
-    except LLMRateLimitError as e:
-        logger.error(f"Rate limit error: {str(e)}")
-        raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {str(e)}")
-    except LLMAPIError as e:
-        logger.error(f"LLM API error: {str(e)}")
-        raise HTTPException(status_code=502, detail=f"LLM API error: {str(e)}")
-    except Exception as e:
-        logger.error(f"Content generation failed: {str(e)}")
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Content generation failed: {str(e)}")
-
-@router.get("/generated-content", response_model=GeneratedContentList)
-async def list_generated_content(
-    skip: int = 0,
-    limit: int = 20,
-    db: Session = Depends(get_db)
-) -> GeneratedContentList:
-    """
-    List all generated content with pagination.
-
-    Args:
-        skip: Number of records to skip
-        limit: Maximum number of records to return
-        db: Database session
-
-    Returns:
-        List of generated content
-    """
-    content = db.query(GeneratedContent).order_by(
-        GeneratedContent.created_at.desc()
-    ).offset(skip).limit(limit).all()
-
-    total = db.query(GeneratedContent).count()
-
-    items = [
-        ContentGenerationResponse(
-            id=item.id,
-            content_type=item.content_type.value,
-            topic=item.topic,
-            tone=item.tone.value,
-            length=item.length,
-            generated_text=item.generated_text,
-            llm_provider=item.llm_provider,
-            model_used=item.model_used,
-            tokens_used=item.tokens_used,
-            generation_time=item.generation_time,
-            created_at=item.created_at
-        )
-        for item in content
-    ]
-
-    return GeneratedContentList(items=items, total=total)
-
-@router.get("/generated-content/{content_id}", response_model=ContentGenerationResponse)
-async def get_generated_content(
-    content_id: int,
-    db: Session = Depends(get_db)
-) -> ContentGenerationResponse:
-    """
-    Get a specific generated content by ID.
-
-    Args:
-        content_id: ID of the content
-        db: Database session
-
-    Returns:
-        Generated content details
-    """
-    content = db.query(GeneratedContent).filter(GeneratedContent.id == content_id).first()
-
-    if not content:
-        raise HTTPException(status_code=404, detail="Content not found")
-
-    return ContentGenerationResponse(
-        id=content.id,
-        content_type=content.content_type.value,
-        topic=content.topic,
-        tone=content.tone.value,
-        length=content.length,
-        generated_text=content.generated_text,
-        llm_provider=content.llm_provider,
-        model_used=content.model_used,
-        tokens_used=content.tokens_used,
-        generation_time=content.generation_time,
-        created_at=content.created_at
-    )
-
-def _build_prompt(request: ContentGenerationRequest) -> str:
-    """
-    Build the LLM prompt based on the content generation request.
-
-    Args:
-        request: Content generation parameters
-
-    Returns:
-        Formatted prompt string
-    """
-    prompt_parts = [
-        f"Write {request.content_type.value} content about: {request.topic}",
-        f"Target length: approximately {request.length} words",
-    ]
-
-    if request.additional_context:
-        prompt_parts.append(f"Additional context: {request.additional_context}")
-
-    prompt_parts.extend([
-        "",
-        "Requirements:",
-        f"- Use a {request.tone.value} tone",
-        "- Make it engaging and actionable",
-        "- Include a clear call-to-action if appropriate",
-        "- Ensure the content is original and creative",
-        "",
-        "Generate the content now:"
-    ])
-
-    return "\n".join(prompt_parts)
-
-def _build_system_prompt(content_type: str, tone: str) -> str:
-    """
-    Build the system prompt to provide context to the LLM.
-
-    Args:
-        content_type: Type of content to generate
-        tone: Desired tone
-
-    Returns:
-        System prompt string
-    """
-    content_instructions = {
-        "blog": "You are an expert blog writer who creates engaging, SEO-friendly blog posts.",
-        "social": "You are a social media expert who creates viral, engaging social media posts.",
-        "email": "You are an email marketing expert who writes compelling email campaigns.",
-        "ad_copy": "You are an advertising copywriter who creates persuasive ad copy.",
-        "landing_page": "You are a conversion copywriter who creates high-converting landing page content."
-    }
-
-    base_instruction = content_instructions.get(
-        content_type,
-        "You are a professional marketing content writer."
-    )
-
-    return f"{base_instruction} Write in a {tone} tone and ensure high quality, original content."
 
 # User authentication endpoints
 @router.post("/users/register", response_model=UserSchema)
@@ -453,8 +217,7 @@ async def create_report(
     try:
         new_report = Report(
             user_id=report_data.user_id,
-            title=report_data.title,
-            config=report_data.config
+            title=report_data.title
         )
         db.add(new_report)
         db.commit()
@@ -610,13 +373,35 @@ async def generate_blueprint(
                 content = content.split('```')[1].split('```')[0].strip()
             blueprint_data = json.loads(content)
 
+        # Map invalid section types to valid ones
+        def normalize_section_type(section_type: str) -> str:
+            """Normalize section types to valid enum values."""
+            type_mapping = {
+                'subsection': 'section',
+                'sub-section': 'section',
+                'heading': 'section',
+                'subheading': 'subtitle',
+                'sub-heading': 'subtitle',
+                'text': 'paragraph',
+                'body': 'paragraph',
+                'image': 'image_placeholder',
+                'chart': 'image_placeholder',
+                'graph': 'image_placeholder',
+                'visualization': 'image_placeholder',
+                'table': 'table_placeholder',
+                'data_table': 'table_placeholder',
+            }
+
+            normalized = section_type.lower().strip()
+            return type_mapping.get(normalized, normalized)
+
         # Validate and create Blueprint object
         blueprint = Blueprint(
             reportTitle=blueprint_data.get('reportTitle', f"{request.reportType.value.replace('_', ' ').title()} Report"),
             sections=[
                 BlueprintSection(
                     id=section.get('id', f"section_{i}"),
-                    type=section.get('type', 'paragraph'),
+                    type=normalize_section_type(section.get('type', 'paragraph')),
                     content=section.get('content', ''),
                     order=section.get('order', i),
                     parentId=section.get('parentId'),
@@ -669,7 +454,7 @@ TASK: Generate a comprehensive report structure in JSON format with the followin
   "sections": [
     {{
       "id": "unique-id-string",
-      "type": "title|subtitle|section|paragraph|image_placeholder|table_placeholder",
+      "type": "MUST BE ONE OF: title, subtitle, section, paragraph, image_placeholder, table_placeholder",
       "content": "string - brief description of what goes here",
       "order": number,
       "parentId": "string|null - for hierarchical structure",
@@ -683,10 +468,18 @@ TASK: Generate a comprehensive report structure in JSON format with the followin
   ]
 }}
 
+VALID SECTION TYPES (use ONLY these):
+- "title" - Main report title
+- "subtitle" - Section subtitles
+- "section" - Major sections (use for all headings and subsections)
+- "paragraph" - Body text content
+- "image_placeholder" - For charts, graphs, visualizations
+- "table_placeholder" - For data tables
+
 RULES:
 1. Start with a main title (type: "title")
 2. Include an executive summary section (type: "section" with child paragraphs)
-3. Organize data points into logical sections and subsections
+3. Organize data points into logical sections (type: "section" for ALL headings, no other heading types)
 4. For each data point selected, create appropriate paragraphs AND suggest relevant visualizations (images/charts)
 5. Use descriptive content that guides the LLM on what to write
 6. Maintain logical flow and hierarchy using parentId
@@ -715,3 +508,209 @@ When creating report structures:
 - Ensure the structure flows logically from problem/context to analysis to conclusions
 
 Always return valid JSON that matches the requested schema exactly."""
+
+
+# Report Generation Endpoint
+@router.post("/reports/generate", response_model=ReportGenerationResponse)
+async def generate_report_from_blueprint(
+    request: ReportGenerationRequest,
+    db: Session = Depends(get_db)
+) -> ReportGenerationResponse:
+    """
+    Generate a complete report from a blueprint structure.
+
+    This endpoint:
+    1. Creates a database record with status 'processing'
+    2. Converts blueprint to prompt
+    3. Calls LLM to generate content
+    4. Updates database with generated content
+    """
+    try:
+        logger.info(f"Starting report generation for user: {request.user_id}")
+
+        # Verify user exists
+        user = db.query(User).filter(User.id == request.user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Step 1: Create database record with status 'processing'
+        new_report = Report(
+            user_id=request.user_id,
+            title=request.blueprint.reportTitle,
+            status="processing",
+            report_type=request.blueprint.reportType.value,
+            blueprint=request.blueprint.dict(),
+            form_selections=request.form_selections
+        )
+        db.add(new_report)
+        db.commit()
+        db.refresh(new_report)
+
+        logger.info(f"Created report record with ID: {new_report.id}")
+
+        # Step 2: Convert blueprint to prompt
+        prompt = blueprint_to_prompt_internal(request.blueprint)
+
+        # Store the prompt used
+        new_report.prompt_used = prompt
+        db.commit()
+
+        logger.info(f"Generated prompt for report (length: {len(prompt)} chars)")
+
+        # Step 3: Call LLM to generate content
+        system_prompt = _build_report_generation_system_prompt()
+
+        start_time = time.time()
+        try:
+            result = await call_llm(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_tokens=8000,  # Long-form content
+                temperature=0.7
+            )
+            generation_time = time.time() - start_time
+
+            # Step 4: Update database with generated content
+            new_report.generated_content = result['content']
+            new_report.status = "completed"
+            new_report.llm_provider = result.get('provider')
+            new_report.model_used = result.get('model')
+            new_report.tokens_used = result.get('tokens_used')
+            new_report.generation_time = generation_time
+
+            db.commit()
+            db.refresh(new_report)
+
+            logger.info(f"Report {new_report.id} generated successfully in {generation_time:.2f}s")
+
+            return ReportGenerationResponse(
+                report_id=new_report.id,
+                status="completed",
+                message="Report generated successfully"
+            )
+
+        except (LLMError, LLMRateLimitError, LLMAPIError) as e:
+            # Update report status to failed
+            new_report.status = "failed"
+            new_report.error_message = str(e)
+            db.commit()
+
+            logger.error(f"Report generation failed: {str(e)}")
+
+            return ReportGenerationResponse(
+                report_id=new_report.id,
+                status="failed",
+                message=f"Report generation failed: {str(e)}"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in report generation: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Report generation failed: {str(e)}")
+
+
+def _build_report_generation_system_prompt() -> str:
+    """Build the system prompt for report content generation."""
+    return """You are an expert business analyst and report writer. Your role is to generate comprehensive,
+professional marketing and business reports based on structured blueprints.
+
+Your reports should:
+- Be well-researched and data-driven (use realistic example data when actual data isn't provided)
+- Include clear insights and actionable recommendations
+- Be professionally written with proper formatting
+- Use markdown for structure (headings, lists, tables, emphasis)
+- Include specific numbers, percentages, and metrics where appropriate
+- Maintain objectivity while highlighting key findings
+- Be thorough but concise - every section should add value
+
+When you see placeholders for images or tables:
+- For tables: Generate realistic markdown tables with relevant data
+- For images: Describe what visualization should be shown (e.g., "[Chart: Bar graph showing X over Y period]")
+
+Write in a professional business tone suitable for executive stakeholders."""
+
+
+def blueprint_to_prompt_internal(blueprint: Blueprint) -> str:
+    """
+    Internal function to convert blueprint to prompt.
+    This matches the frontend blueprintToPrompt function.
+    """
+    sections_hierarchy = []
+
+    # Build hierarchy
+    def build_hierarchy(parent_id=None, level=0):
+        children = [s for s in blueprint.sections if s.parentId == parent_id]
+        children.sort(key=lambda x: x.order)
+
+        for idx, section in enumerate(children):
+            number = ""
+            if level > 0:
+                number = f"{idx + 1}. "
+
+            sections_hierarchy.append({
+                "section": section,
+                "level": level,
+                "number": number
+            })
+
+            build_hierarchy(section.id, level + 1)
+
+    build_hierarchy()
+
+    # Build prompt
+    prompt_parts = [
+        "=" * 80,
+        "REPORT GENERATION INSTRUCTIONS",
+        "=" * 80,
+        "",
+        f"Report Title: {blueprint.reportTitle}",
+        f"Report Type: {blueprint.reportType.value.replace('_', ' ').title()}",
+        f"Generated At: {blueprint.generatedAt}",
+        "",
+        "=" * 80,
+        "STRUCTURAL BLUEPRINT",
+        "=" * 80,
+        ""
+    ]
+
+    for item in sections_hierarchy:
+        section = item["section"]
+        level = item["level"]
+        number = item["number"]
+
+        indent = "  " * level
+        type_badge = section.type.value.upper()
+
+        prompt_parts.append(f"{indent}{number}[{type_badge}] {section.content}")
+
+        if section.metadata.dataSource:
+            prompt_parts.append(f"{indent}  Data Source: {section.metadata.dataSource}")
+        if section.metadata.analysisType:
+            prompt_parts.append(f"{indent}  Analysis: {section.metadata.analysisType}")
+        if section.metadata.visualizationType:
+            prompt_parts.append(f"{indent}  Visualization: {section.metadata.visualizationType}")
+        if section.metadata.estimatedLength:
+            prompt_parts.append(f"{indent}  Est. Length: {section.metadata.estimatedLength}")
+
+        prompt_parts.append("")
+
+    prompt_parts.extend([
+        "=" * 80,
+        "GENERATION GUIDELINES",
+        "=" * 80,
+        "",
+        "1. Follow the structure above exactly",
+        "2. Generate comprehensive, professional content for each section",
+        "3. Use markdown formatting (headings, lists, tables, emphasis)",
+        "4. Include realistic data and metrics where appropriate",
+        "5. For image/table placeholders, create markdown tables or describe visualizations",
+        "6. Maintain consistent tone and quality throughout",
+        "7. Ensure logical flow between sections",
+        "8. Include specific insights and actionable recommendations",
+        "",
+        "=" * 80
+    ])
+
+    return "\n".join(prompt_parts)

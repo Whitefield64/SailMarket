@@ -14,7 +14,7 @@ import { Blueprint } from '@/types/blueprint.types';
 import api from '@/lib/api';
 
 interface FormWizardProps {
-  onBlueprintGenerated: (blueprint: Blueprint) => void;
+  onBlueprintGenerated: (blueprint: Blueprint, formSelections: any) => void;
 }
 
 export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
@@ -140,7 +140,13 @@ export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
         throw new Error(data.error || 'Failed to generate blueprint');
       }
 
-      onBlueprintGenerated(data.blueprint);
+      // Pass both blueprint and form selections
+      onBlueprintGenerated(data.blueprint, {
+        reportType: formData.reportType,
+        selectedDataPoints: selectedLabels,
+        additionalNotes: formData.additionalNotes,
+        formData: formData,
+      });
     } catch (err: any) {
       setError(err.response?.data?.detail || err.message || 'An error occurred while generating the blueprint');
     } finally {

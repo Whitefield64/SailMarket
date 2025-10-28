@@ -6,7 +6,7 @@ import { useUser } from '@/contexts/UserContext';
 import { api, Report } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { FileText, Trash2, Calendar } from 'lucide-react';
+import { FileText, Trash2, Calendar, Tag } from 'lucide-react';
 
 export default function ReportsPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useUser();
@@ -120,8 +120,8 @@ export default function ReportsPage() {
           <p className="text-gray-600 mb-6">
             Get started by generating your first marketing content report
           </p>
-          <Button onClick={() => router.push('/generate')}>
-            Generate Content
+          <Button onClick={() => router.push('/report-builder')}>
+            Create Report
           </Button>
         </Card>
       ) : (
@@ -149,6 +149,13 @@ export default function ReportsPage() {
               </div>
 
               <div className="space-y-3">
+                {report.report_type && (
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Tag className="h-4 w-4 mr-2" />
+                    <span className="capitalize">{report.report_type.replace(/_/g, ' ')}</span>
+                  </div>
+                )}
+
                 <div className="flex items-center text-sm text-gray-600">
                   <Calendar className="h-4 w-4 mr-2" />
                   {formatDate(report.created_at)}

@@ -9,15 +9,18 @@ import { Blueprint } from '@/types/blueprint.types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { blueprintToPrompt, getBlueprintSummary } from '@/utils/blueprintToPrompt';
-import { FileText, Download, Sparkles, CheckCircle2 } from 'lucide-react';
+import { FileText, Download, Sparkles, CheckCircle2, Eye } from 'lucide-react';
+import api from '@/lib/api';
 
 export default function ReportBuilderPage() {
   const { user, isLoading } = useUser();
   const router = useRouter();
   const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
+  const [formSelections, setFormSelections] = useState<any>(null);
   const [showForm, setShowForm] = useState(true);
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [reportId, setReportId] = useState<number | null>(null);
 
   // Redirect if not authenticated
   React.useEffect(() => {
@@ -41,8 +44,9 @@ export default function ReportBuilderPage() {
     return null;
   }
 
-  const handleBlueprintGenerated = (newBlueprint: Blueprint) => {
+  const handleBlueprintGenerated = (newBlueprint: Blueprint, selections: any) => {
     setBlueprint(newBlueprint);
+    setFormSelections(selections);
     setShowForm(false);
   };
 
@@ -56,25 +60,33 @@ export default function ReportBuilderPage() {
   };
 
   const handleGenerateReport = async () => {
-    if (!blueprint) return;
+    if (!blueprint || !user) return;
 
     setIsGenerating(true);
 
     try {
+      // Generate the prompt for display
       const prompt = blueprintToPrompt(blueprint);
       setGeneratedPrompt(prompt);
 
-      // In the future, this will trigger actual report generation
-      // For now, we just show a success message
-      console.log('Generated prompt:', prompt);
+      // Call the API to generate the report
+      const response = await api.generateReportFromBlueprint({
+        user_id: user.id,
+        blueprint: blueprint,
+        form_selections: formSelections || {},
+      });
 
-      // Optional: Save the blueprint to the database
-      // await saveBlueprintToDatabase(blueprint, prompt);
+      setReportId(response.report_id);
 
-      alert('Blueprint finalized! Report generation will be implemented in the next phase.');
+      console.log('Report generation started:', response);
+
+      // Show success message and redirect to reports page after a short delay
+      setTimeout(() => {
+        router.push('/reports');
+      }, 2000);
     } catch (error) {
       console.error('Error generating report:', error);
-      alert('An error occurred while generating the report');
+      alert('An error occurred while generating the report. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -225,19 +237,27 @@ export default function ReportBuilderPage() {
               </Card>
 
               {/* Success Message */}
-              {generatedPrompt && (
+              {generatedPrompt && reportId && (
                 <Card className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
                   <CardContent className="pt-6">
                     <div className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
-                      <div>
+                      <div className="flex-1">
                         <p className="font-medium text-green-900 dark:text-green-100 mb-1">
-                          Blueprint Finalized!
+                          Report Generation Started!
                         </p>
-                        <p className="text-sm text-green-700 dark:text-green-300">
-                          Your report blueprint has been converted to a prompt. Report
-                          generation will be implemented in the next phase.
+                        <p className="text-sm text-green-700 dark:text-green-300 mb-3">
+                          Your report is being generated. You will be redirected to the reports page shortly.
                         </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="bg-white dark:bg-gray-800"
+                          onClick={() => router.push('/reports')}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Reports Now
+                        </Button>
                       </div>
                     </div>
                   </CardContent>
