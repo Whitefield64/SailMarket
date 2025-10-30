@@ -24,6 +24,7 @@ export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
 
   const [formData, setFormData] = useState<FormData>({
     reportType: '',
+    analysisSubject: '',
     selectedDataPoints: {},
     selectedSubOptions: {},
     additionalNotes: '',
@@ -61,7 +62,7 @@ export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
   const isStepValid = (): boolean => {
     switch (currentStep) {
       case 1:
-        return formData.reportType !== '';
+        return formData.reportType !== '' && formData.analysisSubject.trim() !== '';
       case 2:
         return Object.values(formData.selectedDataPoints).some((v) => v === true);
       case 3:
@@ -122,6 +123,13 @@ export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
     }));
   };
 
+  const handleSubjectChange = (subject: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      analysisSubject: subject,
+    }));
+  };
+
   // Blueprint generation
   const handleSubmit = async () => {
     setIsLoading(true);
@@ -132,6 +140,7 @@ export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
 
       const data = await api.generateBlueprint({
         reportType: formData.reportType,
+        analysisSubject: formData.analysisSubject,
         selectedDataPoints: selectedLabels,
         additionalNotes: formData.additionalNotes,
       });
@@ -143,6 +152,7 @@ export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
       // Pass both blueprint and form selections
       onBlueprintGenerated(data.blueprint, {
         reportType: formData.reportType,
+        analysisSubject: formData.analysisSubject,
         selectedDataPoints: selectedLabels,
         additionalNotes: formData.additionalNotes,
         formData: formData,
@@ -172,7 +182,9 @@ export default function FormWizard({ onBlueprintGenerated }: FormWizardProps) {
         {currentStep === 1 && (
           <ReportTypeStep
             selectedType={formData.reportType}
+            analysisSubject={formData.analysisSubject}
             onSelect={handleReportTypeChange}
+            onSubjectChange={handleSubjectChange}
           />
         )}
 

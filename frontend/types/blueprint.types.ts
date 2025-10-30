@@ -51,6 +51,7 @@ export interface SubOption {
 
 export interface FormData {
   reportType: ReportType | '';
+  analysisSubject: string;
   selectedDataPoints: Record<string, boolean>;
   selectedSubOptions: Record<string, boolean>;
   additionalNotes: string;
@@ -58,6 +59,7 @@ export interface FormData {
 
 export interface BlueprintGenerationRequest {
   reportType: ReportType;
+  analysisSubject: string;
   selectedDataPoints: string[];
   additionalNotes: string;
 }

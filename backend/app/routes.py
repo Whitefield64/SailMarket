@@ -443,6 +443,7 @@ def _build_blueprint_prompt(request: BlueprintGenerationRequest) -> str:
 
 USER SELECTIONS:
 - Report Type: {report_type_label}
+- Analysis Subject: {request.analysisSubject}
 - Selected Data Points:
 {data_points_str}
 - Additional Notes: {request.additionalNotes if request.additionalNotes else 'None'}
@@ -487,7 +488,9 @@ RULES:
 8. Include at least 3-5 image_placeholder or table_placeholder sections for data visualization
 9. Ensure order numbers are sequential and logical
 
-Generate a professional, comprehensive structure that would result in a thorough {report_type_label} report.
+Generate a professional, comprehensive structure that would result in a thorough {report_type_label} report specifically tailored for: {request.analysisSubject}
+
+The report should be customized to analyze this specific company/product and address the selected data points in the context of this subject.
 
 Return ONLY valid JSON, no markdown formatting or additional text."""
 

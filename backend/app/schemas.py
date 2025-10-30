@@ -104,6 +104,7 @@ class Blueprint(BaseModel):
 
 class BlueprintGenerationRequest(BaseModel):
     reportType: ReportTypeEnum
+    analysisSubject: str
     selectedDataPoints: list[str]
     additionalNotes: Optional[str] = ""
 

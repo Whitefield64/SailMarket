@@ -1,18 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useUser } from '@/contexts/UserContext';
 import { useRouter } from 'next/navigation';
 import FormWizard from '@/components/ReportBuilder/FormWizard/FormWizard';
 import BlueprintTree from '@/components/ReportBuilder/BlueprintPanel/BlueprintTree';
-import ReportViewer from '@/components/ReportBuilder/ReportViewer/ReportViewer';
 import { Blueprint } from '@/types/blueprint.types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { blueprintToPrompt, getBlueprintSummary } from '@/utils/blueprintToPrompt';
-import { FileText, Download, Sparkles, RefreshCw, Eye } from 'lucide-react';
-import api, { Report } from '@/lib/api';
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import { FileText, Download, Sparkles, CheckCircle2, Eye } from 'lucide-react';
+import api from '@/lib/api';
 
 export default function ReportBuilderPage() {
   const { user, isLoading } = useUser();
@@ -22,8 +20,7 @@ export default function ReportBuilderPage() {
   const [showForm, setShowForm] = useState(true);
   const [generatedPrompt, setGeneratedPrompt] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentReport, setCurrentReport] = useState<Report | null>(null);
-  const [reportPollingInterval, setReportPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [reportId, setReportId] = useState<number | null>(null);
 
   // Redirect if not authenticated
   React.useEffect(() => {
@@ -31,34 +28,6 @@ export default function ReportBuilderPage() {
       router.push('/login');
     }
   }, [user, isLoading, router]);
-
-  // Cleanup polling interval on unmount
-  useEffect(() => {
-    return () => {
-      if (reportPollingInterval) {
-        clearInterval(reportPollingInterval);
-      }
-    };
-  }, [reportPollingInterval]);
-
-  // Poll for report status updates
-  const pollReportStatus = async (reportId: number) => {
-    try {
-      const report = await api.getReport(reportId);
-      setCurrentReport(report);
-
-      // Stop polling if the report is completed or failed
-      if (report.status === 'completed' || report.status === 'failed') {
-        if (reportPollingInterval) {
-          clearInterval(reportPollingInterval);
-          setReportPollingInterval(null);
-        }
-        setIsGenerating(false);
-      }
-    } catch (error) {
-      console.error('Error polling report status:', error);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -81,7 +50,7 @@ export default function ReportBuilderPage() {
     setShowForm(false);
   };
 
-  const handleSectionsChange = (newSections: Blueprint['sections']) => {
+  const handleSectionsChange = (newSections: typeof blueprint.sections) => {
     if (blueprint) {
       setBlueprint({
         ...blueprint,
@@ -96,29 +65,29 @@ export default function ReportBuilderPage() {
     setIsGenerating(true);
 
     try {
+      // Generate the prompt for display
       const prompt = blueprintToPrompt(blueprint);
       setGeneratedPrompt(prompt);
 
+      // Call the API to generate the report
       const response = await api.generateReportFromBlueprint({
         user_id: user.id,
         blueprint: blueprint,
         form_selections: formSelections || {},
       });
 
+      setReportId(response.report_id);
+
       console.log('Report generation started:', response);
 
-      const initialReport = await api.getReport(response.report_id);
-      setCurrentReport(initialReport);
-
-      const interval = setInterval(() => {
-        pollReportStatus(response.report_id);
+      // Show success message and redirect to reports page after a short delay
+      setTimeout(() => {
+        router.push('/reports');
       }, 2000);
-      setReportPollingInterval(interval);
-
-      pollReportStatus(response.report_id);
     } catch (error) {
       console.error('Error generating report:', error);
       alert('An error occurred while generating the report. Please try again.');
+    } finally {
       setIsGenerating(false);
     }
   };
@@ -148,6 +117,7 @@ export default function ReportBuilderPage() {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto">
+        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Report Builder</h1>
           <p className="text-muted-foreground">
@@ -156,13 +126,23 @@ export default function ReportBuilderPage() {
         </div>
 
         {showForm && !blueprint ? (
+          /* Form Wizard View */
           <FormWizard onBlueprintGenerated={handleBlueprintGenerated} />
         ) : (
-          <div className="flex flex-col gap-6">
-            {/* Summaries Row with Equal Heights */}
-            <div className="grid grid-cols-1 lg:grid-cols-[35%_2px_1fr] gap-3">
+          /* Blueprint Editor View */
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left Panel - Blueprint Editor */}
+            <div className="lg:col-span-2">
+              <BlueprintTree
+                sections={blueprint?.sections || []}
+                onSectionsChange={handleSectionsChange}
+              />
+            </div>
+
+            {/* Right Panel - Actions & Summary */}
+            <div className="space-y-6">
               {/* Blueprint Summary */}
-              <Card className="flex flex-col">
+              <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileText className="w-5 h-5" />
@@ -170,76 +150,58 @@ export default function ReportBuilderPage() {
                   </CardTitle>
                   <CardDescription>{blueprint?.reportTitle}</CardDescription>
                 </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-sm font-medium text-muted-foreground mb-1">
-                        Report Type
-                      </div>
-                      <div className="font-medium text-sm">
-                        {blueprint?.reportType.replace(/_/g, ' ').toUpperCase()}
-                      </div>
+                <CardContent className="space-y-4">
+                  <div>
+                    <div className="text-sm font-medium text-muted-foreground mb-1">
+                      Report Type
                     </div>
-                    <div>
-                      <div className="text-sm font-medium text-muted-foreground mb-1">
-                        Total Sections
-                      </div>
-                      <div className="font-medium text-sm">{summary?.totalSections}</div>
+                    <div className="font-medium">
+                      {blueprint?.reportType.replace(/_/g, ' ').toUpperCase()}
                     </div>
                   </div>
+
+                  <div>
+                    <div className="text-sm font-medium text-muted-foreground mb-1">
+                      Total Sections
+                    </div>
+                    <div className="font-medium">{summary?.totalSections}</div>
+                  </div>
+
+                  <div>
+                    <div className="text-sm font-medium text-muted-foreground mb-1">
+                      Section Types
+                    </div>
+                    <div className="space-y-1">
+                      {summary &&
+                        Object.entries(summary.sectionTypes).map(([type, count]) => (
+                          <div key={type} className="flex justify-between text-sm">
+                            <span className="capitalize">{type.replace(/_/g, ' ')}</span>
+                            <span className="font-medium">{count}</span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
                   {summary?.estimatedLength && (
-                    <div className="mt-4">
+                    <div>
                       <div className="text-sm font-medium text-muted-foreground mb-1">
                         Estimated Length
                       </div>
-                      <div className="font-medium text-sm">{summary.estimatedLength}</div>
+                      <div className="font-medium">{summary.estimatedLength}</div>
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              {/* Divider */}
-              <div className="hidden lg:block w-0.5 bg-border"></div>
-
-              {/* Report Summary */}
-              <div className="flex flex-col">
-                <ReportViewer report={currentReport} isLoading={false} summaryOnly={true} />
-              </div>
-            </div>
-
-            {/* Content Row with Resizable Panels */}
-            <PanelGroup direction="horizontal">
-              <Panel defaultSize={35} minSize={25} maxSize={50}>
-                <div className="h-full">
-                  <BlueprintTree
-                    sections={blueprint?.sections || []}
-                    onSectionsChange={handleSectionsChange}
-                  />
-                </div>
-              </Panel>
-
-              <PanelResizeHandle className="w-2 bg-border hover:bg-primary/20 transition-colors rounded-full cursor-col-resize mx-3" />
-
-              <Panel defaultSize={65} minSize={50} maxSize={75}>
-                <div className="bg-muted/30 rounded-lg border p-6 h-full overflow-auto">
-                  <ReportViewer
-                    report={currentReport}
-                    isLoading={isGenerating && !currentReport}
-                    contentOnly={true}
-                  />
-                </div>
-              </Panel>
-            </PanelGroup>
-
-            {/* Actions Panel */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Actions</CardTitle>
-                <CardDescription>Generate and manage your report</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-3">
+              {/* Actions */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Actions</CardTitle>
+                  <CardDescription>Finalize and generate your report</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
                   <Button
+                    className="w-full"
                     onClick={handleGenerateReport}
                     disabled={!blueprint || blueprint.sections.length === 0 || isGenerating}
                   >
@@ -247,11 +209,6 @@ export default function ReportBuilderPage() {
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
                         Generating...
-                      </>
-                    ) : currentReport ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Regenerate Report
                       </>
                     ) : (
                       <>
@@ -262,26 +219,51 @@ export default function ReportBuilderPage() {
                   </Button>
 
                   {generatedPrompt && (
-                    <Button variant="outline" onClick={handleDownloadPrompt}>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleDownloadPrompt}
+                    >
                       <Download className="w-4 h-4 mr-2" />
                       Download Prompt
                     </Button>
                   )}
 
-                  <Button variant="outline" onClick={handleStartOver}>
+                  <Button variant="outline" className="w-full" onClick={handleStartOver}>
                     <FileText className="w-4 h-4 mr-2" />
                     Start Over
                   </Button>
+                </CardContent>
+              </Card>
 
-                  {currentReport && (
-                    <Button variant="outline" onClick={() => router.push('/reports')}>
-                      <Eye className="w-4 h-4 mr-2" />
-                      View All Reports
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+              {/* Success Message */}
+              {generatedPrompt && reportId && (
+                <Card className="bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
+                  <CardContent className="pt-6">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-medium text-green-900 dark:text-green-100 mb-1">
+                          Report Generation Started!
+                        </p>
+                        <p className="text-sm text-green-700 dark:text-green-300 mb-3">
+                          Your report is being generated. You will be redirected to the reports page shortly.
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="bg-white dark:bg-gray-800"
+                          onClick={() => router.push('/reports')}
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          View Reports Now
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </div>
         )}
       </div>

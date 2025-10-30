@@ -122,6 +122,7 @@ export const api = {
   // Blueprint Generation
   generateBlueprint: async (request: {
     reportType: string;
+    analysisSubject: string;
     selectedDataPoints: string[];
     additionalNotes?: string;
   }): Promise<{
